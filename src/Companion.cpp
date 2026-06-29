@@ -115,6 +115,10 @@
 #include "factories/naudio/v1/SequenceFactory.h"
 #endif
 
+#ifdef AC_SUPPORT
+#include "factories/ac/NpcModelBundleFactory.h"
+#endif
+
 #include "preprocess/CompTool.h"
 
 using namespace std::chrono;
@@ -252,6 +256,10 @@ void Companion::Init(const ExportType type, std::atomic<size_t>& assetCount) {
     this->RegisterFactory("NAUDIO:V1:ADPCM_LOOP", std::make_shared<ADPCMLoopFactory>());
     this->RegisterFactory("NAUDIO:V1:ADPCM_BOOK", std::make_shared<ADPCMBookFactory>());
     this->RegisterFactory("NAUDIO:V1:SEQUENCE", std::make_shared<NSequenceFactory>());
+#endif
+
+#ifdef AC_SUPPORT
+    this->RegisterFactory("AC:NPC_MODEL_BUNDLE", std::make_shared<AC::NpcModelBundleFactory>());
 #endif
 #ifndef __EMSCRIPTEN__ // We call this manually
     this->Process(assetCount);
@@ -795,11 +803,14 @@ void Companion::ProcessFile(YAML::Node root, std::atomic<size_t>& assetCount) {
 
         switch (this->gConfig.exporterType) {
             case ExportType::Binary: {
-                stream.str("");
-                stream.clear();
-                exporter->get()->Export(stream, data, result.name, result.node, &result.name);
-                auto data = stream.str();
-                this->gCurrentWrapper->AddFile(result.name, std::vector(data.begin(), data.end()));
+                const bool skipAssetExport = GetSafeNode<bool>(result.node, "skip_asset_export", false);
+                if (!skipAssetExport) {
+                    stream.str("");
+                    stream.clear();
+                    exporter->get()->Export(stream, data, result.name, result.node, &result.name);
+                    auto data = stream.str();
+                    this->gCurrentWrapper->AddFile(result.name, std::vector(data.begin(), data.end()));
+                }
 
                 for (auto& entry : this->gCompanionFiles) {
                     auto output = (this->gCurrentDirectory / entry.first).string();
