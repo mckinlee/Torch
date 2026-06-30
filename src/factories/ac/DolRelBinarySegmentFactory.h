@@ -6,7 +6,7 @@
 namespace AC {
 
 struct DolRelBinarySegmentData : IParsedData {
-    std::vector<uint8_t> syntheticData;
+    std::vector<uint8_t> payloadData;
     Torch::ResourceType resourceType;
     int32_t resourceVersion;
     std::string archivePath;
