@@ -117,6 +117,7 @@
 
 #ifdef AC_SUPPORT
 #include "factories/ac/DolRelBinarySegmentFactory.h"
+#include "factories/ac/BtiTextureFactory.h"
 #include "factories/ac/NpcModelBundleFactory.h"
 #endif
 
@@ -260,6 +261,7 @@ void Companion::Init(const ExportType type, std::atomic<size_t>& assetCount) {
 #endif
 
 #ifdef AC_SUPPORT
+    this->RegisterFactory("AC:BTI_TEXTURE", std::make_shared<AC::BtiTextureFactory>());
     this->RegisterFactory("AC:DOL_REL_BINARY_SEGMENT", std::make_shared<AC::DolRelBinarySegmentFactory>());
     this->RegisterFactory("AC:DOL_REL_POLICY_METADATA", std::make_shared<AC::DolRelPolicyMetadataFactory>());
     this->RegisterFactory("AC:NPC_MODEL_BUNDLE", std::make_shared<AC::NpcModelBundleFactory>());
