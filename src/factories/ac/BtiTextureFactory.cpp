@@ -11,6 +11,30 @@ constexpr size_t kHeaderSize = 32;
 constexpr uint8_t kC8 = 9;
 constexpr uint8_t kRgb5A3 = 2;
 constexpr uint32_t kOtex = 0x4F544558U;
+constexpr uint32_t kBoy1SourceOffset = 1454147680;
+constexpr uint32_t kBoy1SourceSize = 2432;
+
+void requireBoy1RangeSchema(YAML::Node& node, size_t bufferSize) {
+    if (node["source_base_offset"]) {
+        throw std::runtime_error("AC:BTI_TEXTURE does not accept source_base_offset");
+    }
+    if (GetSafeNode<uint32_t>(node, "offset") != 0 ||
+        GetSafeNode<uint32_t>(node, "size") != kBoy1SourceSize ||
+        bufferSize != kBoy1SourceSize) {
+        throw std::runtime_error("AC:BTI_TEXTURE requires the exact packed boy1 range");
+    }
+    auto ranges = node["bounded_ranges"];
+    if (!ranges || !ranges.IsSequence() || ranges.size() != 1) {
+        throw std::runtime_error("AC:BTI_TEXTURE requires exactly one bounded source range");
+    }
+    auto range = ranges[0];
+    if (!range.IsMap() || range.size() != 3 ||
+        GetSafeNode<uint64_t>(range, "source_offset") != kBoy1SourceOffset ||
+        GetSafeNode<uint64_t>(range, "size") != kBoy1SourceSize ||
+        GetSafeNode<uint64_t>(range, "packed_offset") != 0) {
+        throw std::runtime_error("AC:BTI_TEXTURE bounded source range must be the exact boy1 member");
+    }
+}
 
 uint16_t be16(const uint8_t* p) {
     return static_cast<uint16_t>((static_cast<uint16_t>(p[0]) << 8U) | p[1]);
@@ -67,6 +91,7 @@ std::string requiredPath(YAML::Node& node) {
 
 std::optional<std::shared_ptr<IParsedData>> BtiTextureFactory::parse(
     std::vector<uint8_t>& buffer, YAML::Node& node) {
+    requireBoy1RangeSchema(node, buffer.size());
     const size_t offset = GetSafeNode<uint32_t>(node, "offset", 0);
     const size_t size = GetSafeNode<uint32_t>(node, "size", static_cast<uint32_t>(buffer.size() - std::min(offset, buffer.size())));
     if (offset > buffer.size() || size > buffer.size() - offset || size < kHeaderSize) {

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import os
 import shutil
@@ -40,18 +41,43 @@ def synthetic_bti() -> bytes:
     return bytes(header) + image + bytes(palette)
 
 
-def config(root: Path, member: bytes) -> None:
+def write_sparse(path: Path, offset: int, member: bytes) -> None:
+    with path.open("w+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+            returned = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.DeviceIoControl(
+                msvcrt.get_osfhandle(handle.fileno()), 0x000900C4,
+                None, 0, None, 0, ctypes.byref(returned), None)
+            if not ok:
+                raise OSError(ctypes.get_last_error(), "FSCTL_SET_SPARSE failed")
+        handle.seek(offset)
+        handle.write(member)
+
+
+def config(root: Path, member: bytes, *, offset: int = 0,
+           ranges: list[dict[str, int]] | None = None,
+           source_base: bool = False) -> None:
     (root / "assets").mkdir(parents=True)
     (root / "source").mkdir()
-    (root / "source" / "boy1.bti").write_bytes(member)
+    write_sparse(root / "source" / "boy1.bti", MEMBER_OFFSET, member)
     (root / "config.yml").write_text(
         "mode: directory\nfolder: ac-bti-texture\npath: assets\nconfig:\n"
         "  sort:\n    - AC:BTI_TEXTURE\n  logging: CRITICAL\n"
         "  output:\n    binary: boy1.o2r\n", encoding="utf-8")
-    (root / "assets" / "root.yml").write_text(
-        "boy1_texture:\n  type: AC:BTI_TEXTURE\n  path: source/boy1.bti\n"
-        f"  offset: 0\n  size: {len(member)}\n  destination_path: __OTR__{ENTRY}\n",
-        encoding="utf-8")
+    selected = ([{"source_offset": MEMBER_OFFSET, "size": MEMBER_SIZE, "packed_offset": 0}]
+                if ranges is None else ranges)
+    lines = ["boy1_texture:", "  type: AC:BTI_TEXTURE", "  path: source/boy1.bti",
+             "  bounded_ranges:"]
+    for item in selected:
+        lines.append(f"    - source_offset: {item['source_offset']}")
+        lines.append(f"      size: {item['size']}")
+        lines.append(f"      packed_offset: {item['packed_offset']}")
+    if source_base:
+        lines.append("  source_base_offset: 0")
+    lines += [f"  offset: {offset}", f"  size: {MEMBER_SIZE}",
+              f"  destination_path: __OTR__{ENTRY}"]
+    (root / "assets" / "root.yml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def run(torch: Path, root: Path, out: str) -> subprocess.CompletedProcess[str]:
@@ -103,6 +129,14 @@ def expect_reject(torch: Path, work: Path, name: str, mutate) -> None:
         raise RuntimeError(f"negative case unexpectedly passed: {name}")
 
 
+def expect_schema_reject(torch: Path, work: Path, name: str, **configuration) -> None:
+    case = work / ("negative-schema-" + name)
+    config(case, synthetic_bti(), **configuration)
+    result = run(torch, case, "out")
+    if result.returncode == 0:
+        raise RuntimeError(f"schema negative unexpectedly passed: {name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--torch", required=True, type=Path)
@@ -137,6 +171,26 @@ def main() -> int:
         for name, mutate in negatives:
             expect_reject(args.torch.resolve(), work, name, mutate)
 
+        exact_range = {"source_offset": MEMBER_OFFSET, "size": MEMBER_SIZE, "packed_offset": 0}
+        schema_negatives = {
+            "generic-offset": {"offset": 1},
+            "source-base": {"source_base": True},
+            "range-count": {"ranges": [exact_range, {
+                "source_offset": MEMBER_OFFSET, "size": 1, "packed_offset": MEMBER_SIZE}]},
+            "source-offset": {"ranges": [{**exact_range, "source_offset": MEMBER_OFFSET + 1}]},
+            "size-short": {"ranges": [{**exact_range, "size": MEMBER_SIZE - 1}]},
+            "size-extra": {"ranges": [{**exact_range, "size": MEMBER_SIZE + 1}]},
+            "packed-offset": {"ranges": [{**exact_range, "packed_offset": 1}]},
+            "overflow": {"ranges": [{
+                "source_offset": 18446744073709551615, "size": 2, "packed_offset": 0}]},
+        }
+        for name, configuration in schema_negatives.items():
+            expect_schema_reject(args.torch.resolve(), work, name, **configuration)
+        truncated = work / "negative-schema-truncated"
+        config(truncated, synthetic_bti()[:-1])
+        if run(args.torch.resolve(), truncated, "out").returncode == 0:
+            raise RuntimeError("schema negative unexpectedly passed: truncated")
+
         if args.source_image:
             source = args.source_image.resolve()
             if source.stat().st_size != 1459978240:
@@ -162,7 +216,8 @@ def main() -> int:
             emit_runtime_negatives(real / "out-a" / "boy1.o2r", work)
             print(f"real decoded-rgba-sha256: {digest}")
             print(str(real / "out-a" / "boy1.o2r"))
-        print(f"AC:BTI_TEXTURE validation passed: positives=2 negatives={len(negatives)}")
+        print("AC:BTI_TEXTURE bounded validation passed: "
+              f"positives=2 negatives={len(negatives) + len(schema_negatives) + 1}")
         return 0
     except Exception as exc:
         print(f"AC:BTI_TEXTURE validation failed: {exc}", file=sys.stderr)

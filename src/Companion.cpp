@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+#include <limits>
 #include <map>
 
 #include "factories/GenericArrayFactory.h"
@@ -119,6 +120,7 @@
 #ifdef AC_SUPPORT
 #include "factories/ac/DolRelBinarySegmentFactory.h"
 #include "factories/ac/BtiTextureFactory.h"
+#include "factories/ac/PlayerClothTextureFactory.h"
 #include "factories/ac/NpcModelBundleFactory.h"
 #endif
 
@@ -129,6 +131,73 @@ namespace fs = std::filesystem;
 
 static const std::string regular = "[%Y-%m-%d %H:%M:%S.%e] [%l] %v";
 static const std::string line = "[%Y-%m-%d %H:%M:%S.%e] [%l] > %v";
+
+static std::vector<uint8_t> ReadManifestBoundedRanges(const fs::path& path, YAML::Node& node) {
+    auto ranges = node["bounded_ranges"];
+    if (!ranges || !ranges.IsSequence() || ranges.size() == 0) {
+        throw std::runtime_error("bounded_ranges must be a non-empty sequence");
+    }
+
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        throw std::runtime_error("Could not open bounded-range source: " + path.string());
+    }
+    input.seekg(0, std::ios::end);
+    const auto sourceSizeValue = input.tellg();
+    if (sourceSizeValue < 0) {
+        throw std::runtime_error("Could not determine bounded-range source size: " + path.string());
+    }
+    const uint64_t sourceSize = static_cast<uint64_t>(sourceSizeValue);
+    uint64_t packedSize = 0;
+    constexpr uint64_t kMaximumPackedSize = 64U * 1024U * 1024U;
+
+    struct Range {
+        uint64_t sourceOffset;
+        uint64_t size;
+        uint64_t packedOffset;
+    };
+    std::vector<Range> parsedRanges;
+    parsedRanges.reserve(ranges.size());
+    for (const auto& range : ranges) {
+        if (!range.IsMap() || range.size() != 3 || !range["source_offset"] ||
+            !range["size"] || !range["packed_offset"]) {
+            throw std::runtime_error(
+                "Each bounded_ranges entry must contain only source_offset, size, and packed_offset");
+        }
+        const uint64_t sourceOffset = range["source_offset"].as<uint64_t>();
+        const uint64_t size = range["size"].as<uint64_t>();
+        const uint64_t packedOffset = range["packed_offset"].as<uint64_t>();
+        if (size == 0 || packedOffset != packedSize) {
+            throw std::runtime_error("bounded_ranges must be non-empty and contiguously packed in declared order");
+        }
+        if (sourceOffset > std::numeric_limits<uint64_t>::max() - size ||
+            sourceOffset + size > sourceSize) {
+            throw std::runtime_error("bounded_ranges source range overflows or is truncated");
+        }
+        if (packedSize > std::numeric_limits<uint64_t>::max() - size ||
+            packedSize + size > kMaximumPackedSize ||
+            packedSize + size > std::numeric_limits<size_t>::max()) {
+            throw std::runtime_error("bounded_ranges packed size overflows or exceeds the narrow reader limit");
+        }
+        parsedRanges.push_back({ sourceOffset, size, packedOffset });
+        packedSize += size;
+    }
+
+    std::vector<uint8_t> data(static_cast<size_t>(packedSize));
+    for (const auto& range : parsedRanges) {
+        input.clear();
+        input.seekg(static_cast<std::streamoff>(range.sourceOffset), std::ios::beg);
+        if (!input) {
+            throw std::runtime_error("Could not seek to bounded-range source offset");
+        }
+        input.read(reinterpret_cast<char*>(data.data() + range.packedOffset),
+                   static_cast<std::streamsize>(range.size));
+        if (input.gcount() != static_cast<std::streamsize>(range.size)) {
+            throw std::runtime_error("Bounded-range source read was truncated");
+        }
+    }
+    return data;
+}
 
 static std::string ConvertType(std::string type) {
     int index = type.find(':');
@@ -263,6 +332,7 @@ void Companion::Init(const ExportType type, std::atomic<size_t>& assetCount) {
 
 #ifdef AC_SUPPORT
     this->RegisterFactory("AC:BTI_TEXTURE", std::make_shared<AC::BtiTextureFactory>());
+    this->RegisterFactory("AC:PLAYER_CLOTH_TEXTURE", std::make_shared<AC::PlayerClothTextureFactory>());
     this->RegisterFactory("AC:DOL_REL_BINARY_SEGMENT", std::make_shared<AC::DolRelBinarySegmentFactory>());
     this->RegisterFactory("AC:DOL_REL_POLICY_METADATA", std::make_shared<AC::DolRelPolicyMetadataFactory>());
     this->RegisterFactory("AC:NPC_MODEL_BUNDLE", std::make_shared<AC::NpcModelBundleFactory>());
@@ -367,10 +437,15 @@ std::optional<ParseResultData> Companion::ParseNode(YAML::Node& node, std::strin
 
     if (executeDef && this->gConfig.parseMode == ParseMode::Directory) {
         auto path = GetSafeNode<std::string>(node, "path");
-        std::ifstream input(path, std::ios::binary);
-        auto data = std::vector<uint8_t>(std::istreambuf_iterator(input), {});
+        std::vector<uint8_t> data;
+        if (node["bounded_ranges"]) {
+            data = ReadManifestBoundedRanges(path, node);
+        } else {
+            std::ifstream input(path, std::ios::binary);
+            data = std::vector<uint8_t>(std::istreambuf_iterator(input), {});
+            input.close();
+        }
         result = impl->parse(data, node);
-        input.close();
     }
 
     if (!result.has_value()) {
