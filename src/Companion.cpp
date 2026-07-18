@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+#include <map>
 
 #include "factories/GenericArrayFactory.h"
 #include "factories/VtxFactory.h"
@@ -710,9 +711,11 @@ void Companion::ProcessFile(YAML::Node root, std::atomic<size_t>& assetCount) {
 
         if (node["type"]) {
             const auto type = GetTypeNode(node);
+#ifdef NAUDIO_SUPPORT
             if (type == "NAUDIO:V0:SAMPLE") {
                 AudioManager::Instance->bind_sample(node, output);
             }
+#endif
         }
 
         if (!node["offset"]) {
@@ -1329,7 +1332,9 @@ void Companion::Process(std::atomic<size_t>& assetCount) {
 
     SPDLOG_CRITICAL("------------------------------------------------");
 
+#ifdef NAUDIO_SUPPORT
     AudioManager::Instance = new AudioManager();
+#endif
     BinaryWrapper* wrapper = nullptr;
 
     if (this->gConfig.exporterType == ExportType::Binary) {
@@ -1448,7 +1453,7 @@ void Companion::Pack(const std::string& folder, const std::string& output, const
     SPDLOG_CRITICAL("Scanning {}", folder);
 
     auto start = duration_cast<milliseconds>(system_clock::now().time_since_epoch());
-    std::unordered_map<std::string, std::vector<char>> files;
+    std::map<std::string, std::vector<char>> files;
 
     for (const auto& entry : Torch::getRecursiveEntries(folder)) {
         if (entry.is_directory()) {
@@ -1458,7 +1463,8 @@ void Companion::Pack(const std::string& folder, const std::string& output, const
         std::ifstream input(entry.path(), std::ios::binary);
         auto data = std::vector(std::istreambuf_iterator(input), {});
         input.close();
-        files[entry.path().generic_string()] = data;
+        const auto archivePath = fs::relative(entry.path(), folder).generic_string();
+        files[archivePath] = data;
     }
 
     std::unique_ptr<BinaryWrapper> wrapper;
@@ -1475,12 +1481,8 @@ void Companion::Pack(const std::string& folder, const std::string& output, const
     wrapper->CreateArchive();
 
     for (auto& [path, data] : files) {
-        std::string normalized = path;
-        std::replace(normalized.begin(), normalized.end(), '\\', '/');
-        // Remove parent folder
-        normalized = normalized.substr(folder.length() + 1);
-        wrapper->AddFile(normalized, data);
-        SPDLOG_CRITICAL("> Added {}", normalized);
+        wrapper->AddFile(path, data);
+        SPDLOG_CRITICAL("> Added {}", path);
     }
 
     if (!version.empty()) {
