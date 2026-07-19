@@ -9,11 +9,8 @@ namespace {
 
 constexpr uint16_t kWidth = 32;
 constexpr uint16_t kHeight = 32;
-constexpr uint32_t kClothIndex = 0;
 constexpr size_t kImageSize = 0x200;
 constexpr size_t kPaletteSize = 0x20;
-constexpr uint32_t kImageSourceOffset = 1454014656;
-constexpr uint32_t kPaletteSourceOffset = 1453900320;
 constexpr uint32_t kImagePackedOffset = 0;
 constexpr uint32_t kPalettePackedOffset = kImageSize;
 constexpr size_t kPackedSize = kImageSize + kPaletteSize;
@@ -21,18 +18,40 @@ constexpr uint32_t kPaletteEntries = 16;
 constexpr uint32_t kOtex = 0x4F544558U;
 constexpr const char* kFormat = "C4";
 constexpr const char* kPaletteFormat = "RGB5A3";
-constexpr const char* kArchivePath = "ac/texture/forest_1st/player/cloth-000.OTEX";
 
-void requireExactConfiguration(YAML::Node& node) {
+struct PlayerClothSpecification {
+    uint32_t index;
+    uint64_t imageSourceOffset;
+    uint64_t paletteSourceOffset;
+    const char* archivePath;
+};
+
+constexpr std::array<PlayerClothSpecification, 2> kPlayerClothSpecifications{ {
+    { 0, 1454014656, 1453900320,
+      "ac/texture/forest_1st/player/cloth-000.OTEX" },
+    { 1, 1454015168, 1453900352,
+      "ac/texture/forest_1st/player/cloth-001.OTEX" },
+} };
+
+const PlayerClothSpecification& requirePlayerClothSpecification(uint32_t index) {
+    for (const auto& specification : kPlayerClothSpecifications) {
+        if (specification.index == index) {
+            return specification;
+        }
+    }
+    throw std::runtime_error(
+        "AC:PLAYER_CLOTH_TEXTURE supports only built-in cloth indices 0 and 1");
+}
+
+const PlayerClothSpecification& requireExactConfiguration(YAML::Node& node) {
     if (node["source_base_offset"]) {
         throw std::runtime_error("AC:PLAYER_CLOTH_TEXTURE does not accept source_base_offset");
     }
     if (GetSafeNode<uint32_t>(node, "offset") != 0) {
         throw std::runtime_error("AC:PLAYER_CLOTH_TEXTURE generic offset must be packed offset 0");
     }
-    if (GetSafeNode<uint32_t>(node, "cloth_index") != kClothIndex) {
-        throw std::runtime_error("AC:PLAYER_CLOTH_TEXTURE supports only built-in cloth index 0");
-    }
+    const auto& specification =
+        requirePlayerClothSpecification(GetSafeNode<uint32_t>(node, "cloth_index"));
     if (GetSafeNode<uint32_t>(node, "width") != kWidth ||
         GetSafeNode<uint32_t>(node, "height") != kHeight) {
         throw std::runtime_error("AC:PLAYER_CLOTH_TEXTURE requires 32x32 dimensions");
@@ -59,13 +78,13 @@ void requireExactConfiguration(YAML::Node& node) {
     auto image = ranges[0];
     auto palette = ranges[1];
     if (!image.IsMap() || image.size() != 3 ||
-        GetSafeNode<uint64_t>(image, "source_offset") != kImageSourceOffset ||
+        GetSafeNode<uint64_t>(image, "source_offset") != specification.imageSourceOffset ||
         GetSafeNode<uint64_t>(image, "size") != kImageSize ||
         GetSafeNode<uint64_t>(image, "packed_offset") != kImagePackedOffset) {
         throw std::runtime_error("AC:PLAYER_CLOTH_TEXTURE first bounded range must be the exact image");
     }
     if (!palette.IsMap() || palette.size() != 3 ||
-        GetSafeNode<uint64_t>(palette, "source_offset") != kPaletteSourceOffset ||
+        GetSafeNode<uint64_t>(palette, "source_offset") != specification.paletteSourceOffset ||
         GetSafeNode<uint64_t>(palette, "size") != kPaletteSize ||
         GetSafeNode<uint64_t>(palette, "packed_offset") != kPalettePackedOffset) {
         throw std::runtime_error("AC:PLAYER_CLOTH_TEXTURE second bounded range must be the exact palette");
@@ -77,9 +96,11 @@ void requireExactConfiguration(YAML::Node& node) {
     if (path.rfind(prefix, 0) == 0) {
         path.erase(0, 7);
     }
-    if (path != kArchivePath) {
-        throw std::runtime_error("AC:PLAYER_CLOTH_TEXTURE destination_path must be cloth-000");
+    if (path != specification.archivePath) {
+        throw std::runtime_error(
+            "AC:PLAYER_CLOTH_TEXTURE destination_path must match the exact cloth index");
     }
+    return specification;
 }
 
 uint16_t be16(const uint8_t* bytes) {
@@ -128,7 +149,7 @@ void put64(std::vector<uint8_t>& out, uint64_t value) {
 
 std::optional<std::shared_ptr<IParsedData>> PlayerClothTextureFactory::parse(
     std::vector<uint8_t>& buffer, YAML::Node& node) {
-    requireExactConfiguration(node);
+    const auto& specification = requireExactConfiguration(node);
 
     if (buffer.size() != kPackedSize) {
         throw std::runtime_error("AC:PLAYER_CLOTH_TEXTURE packed input must be exactly 544 bytes");
@@ -137,7 +158,7 @@ std::optional<std::shared_ptr<IParsedData>> PlayerClothTextureFactory::parse(
     const uint8_t* image = buffer.data() + kImagePackedOffset;
     const uint8_t* palette = buffer.data() + kPalettePackedOffset;
     auto parsed = std::make_shared<PlayerClothTextureData>();
-    parsed->archivePath = kArchivePath;
+    parsed->archivePath = specification.archivePath;
     parsed->rgba.assign(static_cast<size_t>(kWidth) * kHeight * 4U, 0);
 
     constexpr size_t tilesAcross = kWidth / 8U;
@@ -172,7 +193,12 @@ ExportResult PlayerClothTextureBinaryExporter::Export(std::ostream& write,
                                                        YAML::Node& /*node*/,
                                                        std::string* replacement) {
     const auto data = std::static_pointer_cast<PlayerClothTextureData>(raw);
-    if (data->archivePath != kArchivePath || data->rgba.size() != 4096U) {
+    const bool supportedPath = std::any_of(
+        kPlayerClothSpecifications.begin(), kPlayerClothSpecifications.end(),
+        [&data](const auto& specification) {
+            return data->archivePath == specification.archivePath;
+        });
+    if (!supportedPath || data->rgba.size() != 4096U) {
         throw std::runtime_error("AC:PLAYER_CLOTH_TEXTURE export shape is not exact");
     }
     entryName = data->archivePath;

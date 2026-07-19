@@ -13,9 +13,18 @@ import sys
 import zipfile
 from pathlib import Path
 
-ENTRY = "ac/texture/forest_1st/player/cloth-000.OTEX"
-IMAGE_SOURCE_OFFSET = 1454014656
-PALETTE_SOURCE_OFFSET = 1453900320
+SPECIFICATIONS = {
+    0: {
+        "entry": "ac/texture/forest_1st/player/cloth-000.OTEX",
+        "image_source_offset": 1454014656,
+        "palette_source_offset": 1453900320,
+    },
+    1: {
+        "entry": "ac/texture/forest_1st/player/cloth-001.OTEX",
+        "image_source_offset": 1454015168,
+        "palette_source_offset": 1453900352,
+    },
+}
 EXPECTED_RGBA_SHA256 = "2ceef1598e28c0329d75887aa65d60a9dea92245f5bc9160ecbb29429fd5ed69"
 EXPECTED_PIXELS = {
     (0, 0): (0, 0, 0, 255),
@@ -57,34 +66,44 @@ def write_sparse(path: Path, chunks: list[tuple[int, bytes]]) -> None:
             handle.write(data)
 
 
-def default_ranges() -> list[dict[str, int]]:
+def default_ranges(cloth_index: int) -> list[dict[str, int]]:
+    specification = SPECIFICATIONS[cloth_index]
     return [
-        {"source_offset": IMAGE_SOURCE_OFFSET, "size": 512, "packed_offset": 0},
-        {"source_offset": PALETTE_SOURCE_OFFSET, "size": 32, "packed_offset": 512},
+        {"source_offset": specification["image_source_offset"],
+         "size": 512, "packed_offset": 0},
+        {"source_offset": specification["palette_source_offset"],
+         "size": 32, "packed_offset": 512},
     ]
 
 
 def configure(root: Path, image: bytes, palette: bytes, *,
+              cloth_index: int = 0,
               edits: dict[str, object] | None = None,
               ranges: list[dict[str, int]] | None = None,
               source_base: bool = False) -> None:
+    specification = SPECIFICATIONS.get(cloth_index, SPECIFICATIONS[0])
+    selected_ranges = (
+        default_ranges(cloth_index)
+        if ranges is None and cloth_index in SPECIFICATIONS
+        else default_ranges(0) if ranges is None else ranges
+    )
     (root / "assets").mkdir(parents=True)
     write_sparse(root / "source.bin", [
-        (PALETTE_SOURCE_OFFSET, palette),
-        (IMAGE_SOURCE_OFFSET, image),
+        (specification["palette_source_offset"], palette),
+        (specification["image_source_offset"], image),
     ])
     fields: dict[str, object] = {
         "offset": 0, "image_offset": 0, "image_size": 512,
-        "palette_offset": 512, "palette_size": 32, "cloth_index": 0,
+        "palette_offset": 512, "palette_size": 32, "cloth_index": cloth_index,
         "width": 32, "height": 32, "format": "C4",
         "palette_format": "RGB5A3", "palette_entries": 16,
-        "destination_path": f"__OTR__{ENTRY}",
+        "destination_path": f"__OTR__{specification['entry']}",
     }
     if edits:
         fields.update(edits)
     lines = ["cloth:", "  type: AC:PLAYER_CLOTH_TEXTURE", "  path: source.bin",
              "  bounded_ranges:"]
-    for item in default_ranges() if ranges is None else ranges:
+    for item in selected_ranges:
         lines.append(f"    - source_offset: {item['source_offset']}")
         lines.append(f"      size: {item['size']}")
         lines.append(f"      packed_offset: {item['packed_offset']}")
@@ -107,11 +126,11 @@ def run(torch: Path, root: Path, destination: str) -> subprocess.CompletedProces
     )
 
 
-def rgba(archive: Path) -> bytes:
+def rgba(archive: Path, entry: str) -> bytes:
     with zipfile.ZipFile(archive) as handle:
-        if handle.namelist() != [ENTRY, "version"]:
+        if handle.namelist() != [entry, "version"]:
             raise RuntimeError(f"unexpected archive order: {handle.namelist()}")
-        data = handle.read(ENTRY)
+        data = handle.read(entry)
     if (len(data) != 4176 or data[:1] != b"\x01" or data[4:8] != b"OTEX"
             or data[8:12] != bytes(4) or data[64:68] != b"ACTX"
             or data[68:72] != b"\x00 \x00 " or data[72:76] != (1).to_bytes(4, "big")
@@ -151,18 +170,27 @@ def main() -> int:
     work.mkdir(parents=True)
     try:
         image, palette = synthetic_ranges()
-        positive = work / "positive"
-        configure(positive, image, palette)
-        first = run(args.torch.resolve(), positive, "out-a")
-        second = run(args.torch.resolve(), positive, "out-b")
-        if first.returncode or second.returncode:
-            raise RuntimeError("synthetic positive failed\n" + first.stdout + first.stderr
-                               + second.stdout + second.stderr)
-        first_rgba = rgba(positive / "out-a" / "cloth.o2r")
-        second_rgba = rgba(positive / "out-b" / "cloth.o2r")
-        assert_oracle(first_rgba)
-        if first_rgba != second_rgba:
-            raise RuntimeError("synthetic outputs differed")
+        positive_outputs = {}
+        for cloth_index, specification in SPECIFICATIONS.items():
+            positive = work / f"positive-{cloth_index}"
+            configure(positive, image, palette, cloth_index=cloth_index)
+            first = run(args.torch.resolve(), positive, "out-a")
+            second = run(args.torch.resolve(), positive, "out-b")
+            if first.returncode or second.returncode:
+                raise RuntimeError(
+                    f"synthetic cloth-{cloth_index:03d} positive failed\n" +
+                    first.stdout + first.stderr + second.stdout + second.stderr)
+            first_rgba = rgba(
+                positive / "out-a" / "cloth.o2r", specification["entry"])
+            second_rgba = rgba(
+                positive / "out-b" / "cloth.o2r", specification["entry"])
+            assert_oracle(first_rgba)
+            if first_rgba != second_rgba:
+                raise RuntimeError(
+                    f"synthetic cloth-{cloth_index:03d} outputs differed")
+            positive_outputs[cloth_index] = first_rgba
+        if positive_outputs[0] != positive_outputs[1]:
+            raise RuntimeError("identical synthetic cloth inputs decoded differently by index")
 
         reject(args.torch.resolve(), work, "truncated-image", image[:-1], palette)
         field_negatives = {
@@ -171,7 +199,7 @@ def main() -> int:
             "extra-palette-range": {"palette_size": 33},
             "image-packed-offset": {"image_offset": 1},
             "palette-packed-offset": {"palette_offset": 513},
-            "cloth-index": {"cloth_index": 1},
+            "cloth-index-high": {"cloth_index": 2},
             "width": {"width": 31},
             "height": {"height": 31},
             "format": {"format": "C8"},
@@ -181,16 +209,39 @@ def main() -> int:
         }
         for name, edits in field_negatives.items():
             reject(args.torch.resolve(), work, name, image, palette, edits=edits)
+        reject(
+            args.torch.resolve(), work, "cloth-index-far", image, palette,
+            cloth_index=255)
+        reject(
+            args.torch.resolve(), work, "cloth-001-wrong-destination", image, palette,
+            cloth_index=1,
+            edits={"destination_path": f"__OTR__{SPECIFICATIONS[0]['entry']}"})
+        reject(
+            args.torch.resolve(), work, "cloth-001-wrong-image-source", image, palette,
+            cloth_index=1,
+            ranges=[
+                default_ranges(0)[0],
+                default_ranges(1)[1],
+            ])
+        reject(
+            args.torch.resolve(), work, "cloth-001-wrong-palette-source", image, palette,
+            cloth_index=1,
+            ranges=[
+                default_ranges(1)[0],
+                default_ranges(0)[1],
+            ])
         reject(args.torch.resolve(), work, "source-base", image, palette, source_base=True)
 
-        exact = default_ranges()
+        exact = default_ranges(0)
         range_negatives = {
             "range-count-short": exact[:1],
             "range-count-extra": exact + [
-                {"source_offset": IMAGE_SOURCE_OFFSET, "size": 1, "packed_offset": 544}],
+                {"source_offset": SPECIFICATIONS[0]["image_source_offset"],
+                 "size": 1, "packed_offset": 544}],
             "range-order": [exact[1], exact[0]],
             "range-source-offset": [
-                {**exact[0], "source_offset": IMAGE_SOURCE_OFFSET + 1}, exact[1]],
+                {**exact[0], "source_offset":
+                    SPECIFICATIONS[0]["image_source_offset"] + 1}, exact[1]],
             "range-size-short": [{**exact[0], "size": 511}, exact[1]],
             "range-size-extra": [{**exact[0], "size": 513}, exact[1]],
             "range-packed-gap": [{**exact[0], "packed_offset": 1}, exact[1]],
@@ -201,9 +252,11 @@ def main() -> int:
         for name, ranges in range_negatives.items():
             reject(args.torch.resolve(), work, name, image, palette, ranges=ranges)
 
-        total_negatives = 1 + len(field_negatives) + 1 + len(range_negatives)
+        total_negatives = (
+            1 + len(field_negatives) + 4 + 1 + len(range_negatives))
         print("AC:PLAYER_CLOTH_TEXTURE bounded validation passed: "
-              f"rgba_sha256={EXPECTED_RGBA_SHA256} negatives={total_negatives}")
+              f"indices=0,1 rgba_sha256={EXPECTED_RGBA_SHA256} "
+              f"negatives={total_negatives}")
         return 0
     except Exception as exc:
         print(f"AC:PLAYER_CLOTH_TEXTURE validation failed: {exc}", file=sys.stderr)
