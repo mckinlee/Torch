@@ -24,6 +24,11 @@ SPECIFICATIONS = {
         "image_source_offset": 1454015168,
         "palette_source_offset": 1453900352,
     },
+    2: {
+        "entry": "ac/texture/forest_1st/player/cloth-002.OTEX",
+        "image_source_offset": 1454015680,
+        "palette_source_offset": 1453900384,
+    },
 }
 EXPECTED_RGBA_SHA256 = "2ceef1598e28c0329d75887aa65d60a9dea92245f5bc9160ecbb29429fd5ed69"
 EXPECTED_PIXELS = {
@@ -189,7 +194,8 @@ def main() -> int:
                 raise RuntimeError(
                     f"synthetic cloth-{cloth_index:03d} outputs differed")
             positive_outputs[cloth_index] = first_rgba
-        if positive_outputs[0] != positive_outputs[1]:
+        if any(output != positive_outputs[0]
+               for output in positive_outputs.values()):
             raise RuntimeError("identical synthetic cloth inputs decoded differently by index")
 
         reject(args.torch.resolve(), work, "truncated-image", image[:-1], palette)
@@ -199,7 +205,7 @@ def main() -> int:
             "extra-palette-range": {"palette_size": 33},
             "image-packed-offset": {"image_offset": 1},
             "palette-packed-offset": {"palette_offset": 513},
-            "cloth-index-high": {"cloth_index": 2},
+            "cloth-index-high": {"cloth_index": 3},
             "width": {"width": 31},
             "height": {"height": 31},
             "format": {"format": "C8"},
@@ -212,24 +218,30 @@ def main() -> int:
         reject(
             args.torch.resolve(), work, "cloth-index-far", image, palette,
             cloth_index=255)
-        reject(
-            args.torch.resolve(), work, "cloth-001-wrong-destination", image, palette,
-            cloth_index=1,
-            edits={"destination_path": f"__OTR__{SPECIFICATIONS[0]['entry']}"})
-        reject(
-            args.torch.resolve(), work, "cloth-001-wrong-image-source", image, palette,
-            cloth_index=1,
-            ranges=[
-                default_ranges(0)[0],
-                default_ranges(1)[1],
-            ])
-        reject(
-            args.torch.resolve(), work, "cloth-001-wrong-palette-source", image, palette,
-            cloth_index=1,
-            ranges=[
-                default_ranges(1)[0],
-                default_ranges(0)[1],
-            ])
+        bounded_neighbor_negatives = 0
+        for cloth_index in (1, 2):
+            reject(
+                args.torch.resolve(), work,
+                f"cloth-{cloth_index:03d}-wrong-destination", image, palette,
+                cloth_index=cloth_index,
+                edits={"destination_path": f"__OTR__{SPECIFICATIONS[0]['entry']}"})
+            reject(
+                args.torch.resolve(), work,
+                f"cloth-{cloth_index:03d}-wrong-image-source", image, palette,
+                cloth_index=cloth_index,
+                ranges=[
+                    default_ranges(0)[0],
+                    default_ranges(cloth_index)[1],
+                ])
+            reject(
+                args.torch.resolve(), work,
+                f"cloth-{cloth_index:03d}-wrong-palette-source", image, palette,
+                cloth_index=cloth_index,
+                ranges=[
+                    default_ranges(cloth_index)[0],
+                    default_ranges(0)[1],
+                ])
+            bounded_neighbor_negatives += 3
         reject(args.torch.resolve(), work, "source-base", image, palette, source_base=True)
 
         exact = default_ranges(0)
@@ -253,9 +265,10 @@ def main() -> int:
             reject(args.torch.resolve(), work, name, image, palette, ranges=ranges)
 
         total_negatives = (
-            1 + len(field_negatives) + 4 + 1 + len(range_negatives))
+            1 + len(field_negatives) + 1 + bounded_neighbor_negatives +
+            1 + len(range_negatives))
         print("AC:PLAYER_CLOTH_TEXTURE bounded validation passed: "
-              f"indices=0,1 rgba_sha256={EXPECTED_RGBA_SHA256} "
+              f"indices=0,1,2 rgba_sha256={EXPECTED_RGBA_SHA256} "
               f"negatives={total_negatives}")
         return 0
     except Exception as exc:
