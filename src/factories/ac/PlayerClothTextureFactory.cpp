@@ -26,7 +26,7 @@ struct PlayerClothSpecification {
     const char* archivePath;
 };
 
-constexpr std::array<PlayerClothSpecification, 5> kPlayerClothSpecifications{ {
+constexpr std::array<PlayerClothSpecification, 6> kPlayerClothSpecifications{ {
     { 0, 1454014656, 1453900320,
       "ac/texture/forest_1st/player/cloth-000.OTEX" },
     { 1, 1454015168, 1453900352,
@@ -37,6 +37,8 @@ constexpr std::array<PlayerClothSpecification, 5> kPlayerClothSpecifications{ {
       "ac/texture/forest_1st/player/cloth-003.OTEX" },
     { 4, 1454016704, 1453900448,
       "ac/texture/forest_1st/player/cloth-004.OTEX" },
+    { 5, 1454017216, 1453900480,
+      "ac/texture/forest_1st/player/cloth-005.OTEX" },
 } };
 
 const PlayerClothSpecification& requirePlayerClothSpecification(uint32_t index) {
@@ -46,7 +48,7 @@ const PlayerClothSpecification& requirePlayerClothSpecification(uint32_t index) 
         }
     }
     throw std::runtime_error(
-        "AC:PLAYER_CLOTH_TEXTURE supports only built-in cloth indices 0, 1, 2, 3, and 4");
+        "AC:PLAYER_CLOTH_TEXTURE supports only built-in cloth indices 0, 1, 2, 3, 4, and 5");
 }
 
 const PlayerClothSpecification& requireExactConfiguration(YAML::Node& node) {
