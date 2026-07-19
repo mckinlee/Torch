@@ -29,6 +29,11 @@ SPECIFICATIONS = {
         "image_source_offset": 1454015680,
         "palette_source_offset": 1453900384,
     },
+    3: {
+        "entry": "ac/texture/forest_1st/player/cloth-003.OTEX",
+        "image_source_offset": 1454016192,
+        "palette_source_offset": 1453900416,
+    },
 }
 EXPECTED_RGBA_SHA256 = "2ceef1598e28c0329d75887aa65d60a9dea92245f5bc9160ecbb29429fd5ed69"
 EXPECTED_PIXELS = {
@@ -205,7 +210,7 @@ def main() -> int:
             "extra-palette-range": {"palette_size": 33},
             "image-packed-offset": {"image_offset": 1},
             "palette-packed-offset": {"palette_offset": 513},
-            "cloth-index-high": {"cloth_index": 3},
+            "cloth-index-high": {"cloth_index": 4},
             "width": {"width": 31},
             "height": {"height": 31},
             "format": {"format": "C8"},
@@ -219,7 +224,7 @@ def main() -> int:
             args.torch.resolve(), work, "cloth-index-far", image, palette,
             cloth_index=255)
         bounded_neighbor_negatives = 0
-        for cloth_index in (1, 2):
+        for cloth_index in (1, 2, 3):
             reject(
                 args.torch.resolve(), work,
                 f"cloth-{cloth_index:03d}-wrong-destination", image, palette,
@@ -268,7 +273,7 @@ def main() -> int:
             1 + len(field_negatives) + 1 + bounded_neighbor_negatives +
             1 + len(range_negatives))
         print("AC:PLAYER_CLOTH_TEXTURE bounded validation passed: "
-              f"indices=0,1,2 rgba_sha256={EXPECTED_RGBA_SHA256} "
+              f"indices=0,1,2,3 rgba_sha256={EXPECTED_RGBA_SHA256} "
               f"negatives={total_negatives}")
         return 0
     except Exception as exc:
