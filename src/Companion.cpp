@@ -118,6 +118,7 @@
 #endif
 
 #ifdef AC_SUPPORT
+#include "factories/ac/GameFileFactory.h"
 #include "factories/ac/DolRelBinarySegmentFactory.h"
 #include "factories/ac/BtiTextureFactory.h"
 #include "factories/ac/PlayerClothTextureFactory.h"
@@ -331,6 +332,7 @@ void Companion::Init(const ExportType type, std::atomic<size_t>& assetCount) {
 #endif
 
 #ifdef AC_SUPPORT
+    this->RegisterFactory("AC:GAME_FILE", std::make_shared<AC::GameFileFactory>());
     this->RegisterFactory("AC:BTI_TEXTURE", std::make_shared<AC::BtiTextureFactory>());
     this->RegisterFactory("AC:PLAYER_CLOTH_TEXTURE", std::make_shared<AC::PlayerClothTextureFactory>());
     this->RegisterFactory("AC:DOL_REL_BINARY_SEGMENT", std::make_shared<AC::DolRelBinarySegmentFactory>());
