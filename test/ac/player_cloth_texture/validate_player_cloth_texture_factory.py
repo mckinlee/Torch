@@ -13,38 +13,21 @@ import sys
 import zipfile
 from pathlib import Path
 
-SPECIFICATIONS = {
-    0: {
-        "entry": "ac/texture/forest_1st/player/cloth-000.OTEX",
-        "image_source_offset": 1454014656,
-        "palette_source_offset": 1453900320,
-    },
-    1: {
-        "entry": "ac/texture/forest_1st/player/cloth-001.OTEX",
-        "image_source_offset": 1454015168,
-        "palette_source_offset": 1453900352,
-    },
-    2: {
-        "entry": "ac/texture/forest_1st/player/cloth-002.OTEX",
-        "image_source_offset": 1454015680,
-        "palette_source_offset": 1453900384,
-    },
-    3: {
-        "entry": "ac/texture/forest_1st/player/cloth-003.OTEX",
-        "image_source_offset": 1454016192,
-        "palette_source_offset": 1453900416,
-    },
-    4: {
-        "entry": "ac/texture/forest_1st/player/cloth-004.OTEX",
-        "image_source_offset": 1454016704,
-        "palette_source_offset": 1453900448,
-    },
-    5: {
-        "entry": "ac/texture/forest_1st/player/cloth-005.OTEX",
-        "image_source_offset": 1454017216,
-        "palette_source_offset": 1453900480,
-    },
-}
+IMAGE_SOURCE_BASE = 1454014656
+PALETTE_SOURCE_BASE = 1453900320
+PLAYER_CLOTH_COUNT = 255
+
+
+def specification(cloth_index: int) -> dict[str, int | str]:
+    return {
+        "entry": f"ac/texture/forest_1st/player/cloth-{cloth_index:03d}.OTEX",
+        "image_source_offset": IMAGE_SOURCE_BASE + cloth_index * 512,
+        "palette_source_offset": PALETTE_SOURCE_BASE + cloth_index * 32,
+    }
+
+
+POSITIVE_INDICES = (0, 1, 5, 6, 254)
+SPECIFICATIONS = {index: specification(index) for index in POSITIVE_INDICES}
 EXPECTED_RGBA_SHA256 = "2ceef1598e28c0329d75887aa65d60a9dea92245f5bc9160ecbb29429fd5ed69"
 EXPECTED_PIXELS = {
     (0, 0): (0, 0, 0, 255),
@@ -220,7 +203,7 @@ def main() -> int:
             "extra-palette-range": {"palette_size": 33},
             "image-packed-offset": {"image_offset": 1},
             "palette-packed-offset": {"palette_offset": 513},
-            "cloth-index-high": {"cloth_index": 6},
+            "cloth-index-high": {"cloth_index": PLAYER_CLOTH_COUNT},
             "width": {"width": 31},
             "height": {"height": 31},
             "format": {"format": "C8"},
@@ -232,9 +215,9 @@ def main() -> int:
             reject(args.torch.resolve(), work, name, image, palette, edits=edits)
         reject(
             args.torch.resolve(), work, "cloth-index-far", image, palette,
-            cloth_index=255)
+            cloth_index=PLAYER_CLOTH_COUNT + 1)
         bounded_neighbor_negatives = 0
-        for cloth_index in (1, 2, 3, 4, 5):
+        for cloth_index in POSITIVE_INDICES[1:]:
             reject(
                 args.torch.resolve(), work,
                 f"cloth-{cloth_index:03d}-wrong-destination", image, palette,
@@ -283,7 +266,8 @@ def main() -> int:
             1 + len(field_negatives) + 1 + bounded_neighbor_negatives +
             1 + len(range_negatives))
         print("AC:PLAYER_CLOTH_TEXTURE bounded validation passed: "
-              f"indices=0,1,2,3,4,5 rgba_sha256={EXPECTED_RGBA_SHA256} "
+              f"indices={','.join(str(index) for index in POSITIVE_INDICES)} "
+              f"rgba_sha256={EXPECTED_RGBA_SHA256} "
               f"negatives={total_negatives}")
         return 0
     except Exception as exc:
