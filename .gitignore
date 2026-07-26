@@ -16,6 +16,8 @@ code/
 tools/
 modding/*
 .cache
+__pycache__/
+*.pyc
 
 # Doxygen output
 docs/html

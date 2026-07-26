@@ -121,6 +121,7 @@
 #include "factories/ac/GameFileFactory.h"
 #include "factories/ac/BtiTextureFactory.h"
 #include "factories/ac/PlayerClothTextureFactory.h"
+#include "factories/ac/NpcTextureSetFactory.h"
 #endif
 
 #include "preprocess/CompTool.h"
@@ -333,6 +334,7 @@ void Companion::Init(const ExportType type, std::atomic<size_t>& assetCount) {
     this->RegisterFactory("AC:GAME_FILE", std::make_shared<AC::GameFileFactory>());
     this->RegisterFactory("AC:BTI_TEXTURE", std::make_shared<AC::BtiTextureFactory>());
     this->RegisterFactory("AC:PLAYER_CLOTH_TEXTURE", std::make_shared<AC::PlayerClothTextureFactory>());
+    this->RegisterFactory("AC:NPC_TEXTURE_SET", std::make_shared<AC::NpcTextureSetFactory>());
 #endif
 #ifndef __EMSCRIPTEN__ // We call this manually
     this->Process(assetCount);

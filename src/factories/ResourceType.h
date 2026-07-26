@@ -21,6 +21,7 @@ enum class ResourceType {
     GenericArray = 0x47415252, // GARR
     AssetArray = 0x41415252,   // AARR
     Viewport = 0x4F565054,     // OVPT
+    NpcTextureSet = 0x414E5458, // ANTX
 
     // SM64
     Anim = 0x414E494D,           // ANIM
