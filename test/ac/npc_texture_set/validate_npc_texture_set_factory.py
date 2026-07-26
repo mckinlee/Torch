@@ -48,7 +48,8 @@ def literal_yaz0(data: bytes) -> bytes:
         encoded.extend(chunk)
     if len(encoded) > LOGICAL_SIZE:
         raise RuntimeError("literal Yaz0 fixture exceeds the exact source member")
-    encoded.extend(b"\0" * (STORED_SIZE - len(encoded)))
+    encoded.extend(b"\0" * (LOGICAL_SIZE - len(encoded)))
+    encoded.extend(bytes(range(1, STORED_SIZE - LOGICAL_SIZE + 1)))
     return bytes(encoded)
 
 

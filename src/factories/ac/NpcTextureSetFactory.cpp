@@ -127,11 +127,6 @@ std::vector<uint8_t> DecodeYaz0(const std::vector<uint8_t>& source) {
         !std::equal(kYaz0Magic.begin(), kYaz0Magic.end(), source.begin())) {
         throw std::runtime_error("AC:NPC_TEXTURE_SET source member is not Yaz0");
     }
-    for (size_t index = kCompressedLogicalSize; index < source.size(); ++index) {
-        if (source[index] != 0) {
-            throw std::runtime_error("AC:NPC_TEXTURE_SET source alignment padding is not zero");
-        }
-    }
     const uint32_t outputSize = ReadBigEndian32(source.data() + 4);
     if (outputSize == 0 ||
         outputSize > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
