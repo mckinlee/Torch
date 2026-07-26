@@ -16,6 +16,7 @@ SOURCE_OFFSET = 1_447_155_436
 LOGICAL_SIZE = 6_137_393
 STORED_SIZE = 6_137_408
 SET_SIZE = 0x1220
+MAX_DECOMPRESSED_SIZE = 24 * 1024 * 1024
 SET_OFFSETS = [
     0x474A00, 0x475C20, 0x47C8E0, 0x47DB00, 0x47ED20,
     0x47FF40, 0x481160, 0x482380, 0x4835A0, 0x4847C0,
@@ -213,9 +214,19 @@ def main() -> int:
         if run(args.torch.resolve(), corrupt).returncode == 0:
             raise RuntimeError("corrupt Yaz0 case unexpectedly passed")
 
+        oversized = work / "negative-oversized-output"
+        configure(oversized, recipe(1))
+        oversized_source = bytearray(compressed)
+        oversized_source[4:8] = (MAX_DECOMPRESSED_SIZE + 1).to_bytes(4, "big")
+        write_sparse(oversized / "source.bin", [
+            (SOURCE_OFFSET, bytes(oversized_source))
+        ])
+        if run(args.torch.resolve(), oversized).returncode == 0:
+            raise RuntimeError("oversized Yaz0 output unexpectedly passed")
+
         print(
             "AC:NPC_TEXTURE_SET validation passed: "
-            f"entries=15 negatives={len(negatives) + 1}"
+            f"entries=15 negatives={len(negatives) + 2}"
         )
         return 0
     except Exception as exc:

@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
-#include <limits>
 #include <stdexcept>
 #include <string_view>
 
@@ -20,6 +19,10 @@ constexpr uint32_t kFrameSize = 0x100U;
 constexpr uint32_t kBodySize = 0x400U;
 constexpr uint32_t kSetSize =
     kPaletteSize + (kEyeCount + kMouthCount) * kFrameSize + kBodySize;
+constexpr uint32_t kMinimumDecompressedSize = 0x4847C0U + kSetSize;
+// foresta.rel is a GameCube runtime module and must fit in the console's
+// 24 MiB MEM1. Reject impossible Yaz0 declarations before allocating.
+constexpr uint32_t kMaximumDecompressedSize = 24U * 1024U * 1024U;
 constexpr uint16_t kFrameWidth = 32;
 constexpr uint16_t kFrameHeight = 16;
 constexpr uint16_t kTextureFormatC4 = 8;
@@ -128,8 +131,8 @@ std::vector<uint8_t> DecodeYaz0(const std::vector<uint8_t>& source) {
         throw std::runtime_error("AC:NPC_TEXTURE_SET source member is not Yaz0");
     }
     const uint32_t outputSize = ReadBigEndian32(source.data() + 4);
-    if (outputSize == 0 ||
-        outputSize > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+    if (outputSize < kMinimumDecompressedSize ||
+        outputSize > kMaximumDecompressedSize) {
         throw std::runtime_error("AC:NPC_TEXTURE_SET Yaz0 output size is invalid");
     }
     std::vector<uint8_t> output(outputSize);
