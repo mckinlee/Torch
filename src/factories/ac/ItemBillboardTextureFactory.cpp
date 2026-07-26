@@ -11,8 +11,6 @@ namespace {
 constexpr uint64_t kCompressedSourceOffset = 1447155436ULL;
 constexpr uint32_t kCompressedLogicalSize = 6137393U;
 constexpr uint32_t kCompressedStoredSize = 6137408U;
-constexpr uint32_t kFamilyFirstOffset = 0xB6AA80U;
-constexpr uint32_t kFamilyEndOffset = 0xB73100U;
 constexpr uint32_t kMaximumDecompressedSize = 24U * 1024U * 1024U;
 constexpr uint32_t kPaletteSize = 0x20U;
 constexpr uint32_t kPaletteEntries = 16U;
@@ -105,15 +103,14 @@ Specification RequireExactConfiguration(YAML::Node& node) {
         GetSafeNode<uint32_t>(node, "texture_offset");
     const uint32_t paletteOffset =
         GetSafeNode<uint32_t>(node, "palette_offset");
-    const auto rangeInsideFamily = [](uint32_t offset, uint32_t size) {
-        return offset >= kFamilyFirstOffset &&
-            offset <= kFamilyEndOffset &&
-            size <= kFamilyEndOffset - offset;
+    const auto rangeInsideModule = [](uint32_t offset, uint32_t size) {
+        return offset <= kMaximumDecompressedSize &&
+            size <= kMaximumDecompressedSize - offset;
     };
-    if (!rangeInsideFamily(textureOffset, textureSize) ||
-        !rangeInsideFamily(paletteOffset, kPaletteSize)) {
+    if (!rangeInsideModule(textureOffset, textureSize) ||
+        !rangeInsideModule(paletteOffset, kPaletteSize)) {
         throw std::runtime_error(
-            "AC:ITEM_BILLBOARD_TEXTURE selected REL range is outside the item family");
+            "AC:ITEM_BILLBOARD_TEXTURE selected REL range is outside the module");
     }
 
     auto ranges = node["bounded_ranges"];

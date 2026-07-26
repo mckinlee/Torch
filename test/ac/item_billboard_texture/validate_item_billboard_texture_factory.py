@@ -290,8 +290,8 @@ def main() -> int:
             "destination": {
                 "destination_path": "__OTR__ac/texture/item/present.OTEX"
             },
-            "texture-offset": {"texture_offset": 0xB6AA7F},
-            "palette-offset": {"palette_offset": 0xB73100},
+            "texture-offset": {"texture_offset": MAX_DECOMPRESSED_SIZE},
+            "palette-offset": {"palette_offset": MAX_DECOMPRESSED_SIZE},
             "texture-size": {"texture_size": 511},
             "palette-size": {"palette_size": 30},
             "dimensions": {"height": 16},
