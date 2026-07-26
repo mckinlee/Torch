@@ -122,6 +122,7 @@
 #include "factories/ac/BtiTextureFactory.h"
 #include "factories/ac/PlayerClothTextureFactory.h"
 #include "factories/ac/NpcTextureSetFactory.h"
+#include "factories/ac/ItemBillboardTextureFactory.h"
 #endif
 
 #include "preprocess/CompTool.h"
@@ -335,6 +336,7 @@ void Companion::Init(const ExportType type, std::atomic<size_t>& assetCount) {
     this->RegisterFactory("AC:BTI_TEXTURE", std::make_shared<AC::BtiTextureFactory>());
     this->RegisterFactory("AC:PLAYER_CLOTH_TEXTURE", std::make_shared<AC::PlayerClothTextureFactory>());
     this->RegisterFactory("AC:NPC_TEXTURE_SET", std::make_shared<AC::NpcTextureSetFactory>());
+    this->RegisterFactory("AC:ITEM_BILLBOARD_TEXTURE", std::make_shared<AC::ItemBillboardTextureFactory>());
 #endif
 #ifndef __EMSCRIPTEN__ // We call this manually
     this->Process(assetCount);
