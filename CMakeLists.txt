@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.12)
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
 project(torch)
 include(FetchContent)
 
@@ -9,6 +12,7 @@ set(CMAKE_C_STANDARD 11)
 
 # Set build options
 option(USE_STANDALONE "Build as a standalone executable" ON)
+option(USE_STATIC_MSVC_RUNTIME "Link the standalone executable with the static MSVC runtime" OFF)
 option(BUILD_STORMLIB "Build with StormLib support" OFF)
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 
@@ -20,6 +24,16 @@ option(BUILD_FZERO "Build with F-Zero X support" ON)
 option(BUILD_MARIO_ARTIST "Build with Mario Artist support" ON)
 option(BUILD_NAUDIO "Build with NAudio support" ON)
 option(BUILD_AC "Build with Animal Crossing support" ON)
+
+if(MSVC)
+    if(USE_STATIC_MSVC_RUNTIME)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY
+            "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    else()
+        set(CMAKE_MSVC_RUNTIME_LIBRARY
+            "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+    endif()
+endif()
 
 if(EMSCRIPTEN)
     set(BUILD_SM64 OFF) # TODO: This is broken for some reason
@@ -131,7 +145,11 @@ endif()
 if (USE_STANDALONE)
     add_definitions(-DSTANDALONE)
     add_executable(${PROJECT_NAME} ${SRC_DIR})
-	set(LINK_TYPE "MD")
+    if(MSVC AND USE_STATIC_MSVC_RUNTIME)
+        set(LINK_TYPE "MT")
+    else()
+        set(LINK_TYPE "MD")
+    endif()
 else()
     add_library(${PROJECT_NAME} STATIC ${SRC_DIR})
 	set(LINK_TYPE "MT")
@@ -183,7 +201,6 @@ else()
         target_link_options(${PROJECT_NAME} PRIVATE /bigobj)
     endif()
     add_definitions(-DSTORMLIB_NO_AUTO_LINK)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 
