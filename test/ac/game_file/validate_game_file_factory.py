@@ -115,6 +115,7 @@ def run(torch: Path, root: Path) -> subprocess.CompletedProcess[str]:
         stderr=subprocess.PIPE,
         env=os.environ.copy(),
         check=False,
+        timeout=180,
     )
 
 
@@ -124,7 +125,8 @@ def main() -> int:
     parser.add_argument("--work-dir", required=True, type=Path)
     args = parser.parse_args()
     work = args.work_dir.resolve()
-    shutil.rmtree(work, ignore_errors=True)
+    if work.exists():
+        parser.error("--work-dir must not already exist")
     work.mkdir(parents=True)
     copydate = bytes((index * 29 + 7) & 0xFF for index in range(COPYDATE_STORED))
     try:

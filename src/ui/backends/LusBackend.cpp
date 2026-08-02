@@ -3,8 +3,10 @@
 #include "ui/backends/LusBackend.h"
 
 #include <filesystem>
+#include <memory>
 #include <stdexcept>
 #include <vector>
+#include <zip.h>
 
 #include "Companion.h"
 #include "ui/Theme.h"
@@ -33,7 +35,6 @@
 #include <ship/resource/ResourceLoader.h>
 #include <ship/resource/File.h>
 #include <ship/resource/archive/ArchiveManager.h>
-#include <ship/resource/archive/O2rArchive.h>
 #include <libultraship/libultra/gbi.h>
 
 #include <algorithm>
@@ -136,9 +137,10 @@ class ViewerShutdownGuard final {
 };
 
 void ValidateShaderArchive(const std::string& path) {
-    Ship::O2rArchive archive(path);
-    archive.Load();
-    if (!archive.IsLoaded()) {
+    int errorCode = 0;
+    std::unique_ptr<zip_t, decltype(&zip_discard)> archive(zip_open(path.c_str(), ZIP_RDONLY, &errorCode),
+                                                           &zip_discard);
+    if (!archive) {
         throw std::runtime_error("Torch viewer shader archive could not be opened: " + path);
     }
 
@@ -148,7 +150,7 @@ void ValidateShaderArchive(const std::string& path) {
         "shaders/opengl/default.shader.glsl",
     };
     for (const char* shader : kRequiredShaders) {
-        if (!archive.HasFile(shader)) {
+        if (zip_name_locate(archive.get(), shader, 0) < 0) {
             throw std::runtime_error("Torch viewer shader archive is incomplete: " + path + " (missing " + shader +
                                      ")");
         }
