@@ -7,7 +7,6 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -70,8 +69,7 @@ def main() -> int:
     work_dir = args.work_dir.resolve()
     require(torch.is_file(), f"Torch executable is missing: {torch}")
 
-    if work_dir.exists():
-        shutil.rmtree(work_dir)
+    require(not work_dir.exists(), f"--work-dir must not already exist: {work_dir}")
     source = work_dir / "source"
     (source / "nested" / "deeper").mkdir(parents=True)
 
@@ -79,6 +77,16 @@ def main() -> int:
     (source / "nested" / "deeper" / "gamma.txt").write_text("gamma\n", encoding="utf-8")
     (source / "alpha.txt").write_text("alpha\n", encoding="utf-8")
     (source / "nested" / "beta.bin").write_bytes(bytes(range(64)))
+
+    inside = source / "inside.o2r"
+    contained = run_torch(torch, "pack", str(source), str(inside), "o2r")
+    contained_output = contained.stdout + contained.stderr
+    require(contained.returncode == 1, "output inside the input tree was accepted")
+    require(
+        "Output archive must be outside the selected input directory" in contained_output,
+        "contained output error was not reported cleanly",
+    )
+    require(not inside.exists(), "contained output archive was created")
 
     first = work_dir / "first.o2r"
     second = work_dir / "second.o2r"

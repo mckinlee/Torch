@@ -20,7 +20,7 @@ constexpr uint32_t Align32(uint32_t value) {
     return (value + 31U) & ~31U;
 }
 
-constexpr std::array<Specification, 11> kSpecifications{{
+constexpr std::array<Specification, 11> kSpecifications{ {
     { "dol", "ac/executable/main.dol", 122880, 918720, 918720 },
     { "dvd", "ac/dvd/audiorom.img", 1438854976, 8300384, Align32(8300384) },
     { "dvd", "ac/dvd/COPYDATE", 1447155360, 19, Align32(19) },
@@ -32,7 +32,7 @@ constexpr std::array<Specification, 11> kSpecifications{{
     { "dvd", "ac/dvd/opening.bnr", 1438295600, 6496, Align32(6496) },
     { "dvd", "ac/dvd/static.map", 1438302096, 552879, Align32(552879) },
     { "dvd", "ac/dvd/static.str", 1447155380, 56, Align32(56) },
-}};
+} };
 
 std::string NormalizePath(std::string path) {
     std::replace(path.begin(), path.end(), '\\', '/');
@@ -52,8 +52,9 @@ const Specification& RequireSpecification(YAML::Node& node) {
     }
     const std::string role = GetSafeNode<std::string>(node, "role");
     const std::string path = NormalizePath(GetSafeNode<std::string>(node, "destination_path"));
-    const auto found = std::find_if(kSpecifications.begin(), kSpecifications.end(),
-                                    [&](const Specification& item) { return item.role == role && item.archivePath == path; });
+    const auto found = std::find_if(kSpecifications.begin(), kSpecifications.end(), [&](const Specification& item) {
+        return item.role == role && item.archivePath == path;
+    });
     if (found == kSpecifications.end()) {
         throw std::runtime_error("AC:GAME_FILE role and destination_path are not a supported game file");
     }

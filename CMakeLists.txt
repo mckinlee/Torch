@@ -255,21 +255,18 @@ else()
 endif()
 
 if(BUILD_UI)
-    if(CMAKE_CONFIGURATION_TYPES)
-        set(TORCH_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>)
-    else()
-        set(TORCH_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-    endif()
-    add_custom_target(torch_lus_assets ALL
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${TORCH_RUNTIME_OUTPUT_DIRECTORY}
+    add_custom_target(torch_lus_assets
+        DEPENDS ${TORCH_LUS_SHADER_ARCHIVE}
+    )
+    add_dependencies(${PROJECT_NAME} torch_lus_assets)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${TORCH_LUS_SHADER_ARCHIVE}
-                ${TORCH_RUNTIME_OUTPUT_DIRECTORY}/torch-lus-assets.o2r
-        DEPENDS ${TORCH_LUS_SHADER_ARCHIVE}
+                $<TARGET_FILE_DIR:${PROJECT_NAME}>/torch-lus-assets.o2r
         COMMENT "Installing libultraship shaders next to Torch"
         VERBATIM
     )
-    add_dependencies(${PROJECT_NAME} torch_lus_assets)
 endif()
 
 if (BUILD_STORMLIB)

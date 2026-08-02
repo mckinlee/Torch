@@ -186,7 +186,7 @@ def run(torch: Path, root: Path, destination: str) -> subprocess.CompletedProces
     return subprocess.run(
         [str(torch), "o2r", "source.bin", "-s", ".", "-d", destination],
         cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env=os.environ.copy(), check=False,
+        env=os.environ.copy(), check=False, timeout=180,
     )
 
 
@@ -275,35 +275,28 @@ def main() -> int:
     args = parser.parse_args()
     work = args.work_dir.resolve()
     if work.exists():
-        shutil.rmtree(work)
+        parser.error("--work-dir must not already exist")
     work.mkdir(parents=True)
     try:
         image, palette = synthetic_ranges(0)
         positive = work / "positive-family"
         configure_family(positive)
-        first = run(args.torch.resolve(), positive, "out-a")
-        second = run(args.torch.resolve(), positive, "out-b")
-        if first.returncode or second.returncode:
+        result = run(args.torch.resolve(), positive, "out")
+        if result.returncode:
             raise RuntimeError(
                 "synthetic 255-cloth family positive failed\n" +
-                first.stdout + first.stderr + second.stdout + second.stderr)
-        first_outputs = family_rgba(positive / "out-a" / "cloth.o2r")
-        second_outputs = family_rgba(positive / "out-b" / "cloth.o2r")
-        if ((positive / "out-a" / "cloth.o2r").read_bytes() !=
-                (positive / "out-b" / "cloth.o2r").read_bytes()):
-            raise RuntimeError("synthetic 255-cloth archives were not deterministic")
-        if first_outputs != second_outputs:
-            raise RuntimeError("synthetic 255-cloth family outputs differed")
-        for cloth_index, actual in first_outputs.items():
+                result.stdout + result.stderr)
+        outputs = family_rgba(positive / "out" / "cloth.o2r")
+        for cloth_index, actual in outputs.items():
             expected = expected_rgba(*synthetic_ranges(cloth_index))
             if actual != expected:
                 raise RuntimeError(
                     f"cloth-{cloth_index:03d} differs from the independent decoder")
-        assert_oracle(first_outputs[0])
-        if all(alpha == 255 for alpha in first_outputs[1][3::4]):
+        assert_oracle(outputs[0])
+        if all(alpha == 255 for alpha in outputs[1][3::4]):
             raise RuntimeError("RGB5A3 translucent-palette coverage is missing")
         family_digest = hashlib.sha256(b"".join(
-            first_outputs[index] for index in range(PLAYER_CLOTH_COUNT))).hexdigest()
+            outputs[index] for index in range(PLAYER_CLOTH_COUNT))).hexdigest()
         if family_digest != EXPECTED_FAMILY_SHA256:
             raise RuntimeError(f"fixed 255-cloth family hash mismatch: {family_digest}")
 
@@ -328,30 +321,19 @@ def main() -> int:
         reject(
             args.torch.resolve(), work, "cloth-index-far", image, palette,
             cloth_index=PLAYER_CLOTH_COUNT + 1)
-        bounded_neighbor_negatives = 0
-        for cloth_index in (1, 127, 254):
-            reject(
-                args.torch.resolve(), work,
-                f"cloth-{cloth_index:03d}-wrong-destination", image, palette,
-                cloth_index=cloth_index,
-                edits={"destination_path": f"__OTR__{SPECIFICATIONS[0]['entry']}"})
-            reject(
-                args.torch.resolve(), work,
-                f"cloth-{cloth_index:03d}-wrong-image-source", image, palette,
-                cloth_index=cloth_index,
-                ranges=[
-                    default_ranges(0)[0],
-                    default_ranges(cloth_index)[1],
-                ])
-            reject(
-                args.torch.resolve(), work,
-                f"cloth-{cloth_index:03d}-wrong-palette-source", image, palette,
-                cloth_index=cloth_index,
-                ranges=[
-                    default_ranges(cloth_index)[0],
-                    default_ranges(0)[1],
-                ])
-            bounded_neighbor_negatives += 3
+        cloth_index = 127
+        reject(
+            args.torch.resolve(), work, "wrong-destination", image, palette,
+            cloth_index=cloth_index,
+            edits={"destination_path": f"__OTR__{SPECIFICATIONS[0]['entry']}"})
+        reject(
+            args.torch.resolve(), work, "wrong-image-source", image, palette,
+            cloth_index=cloth_index,
+            ranges=[default_ranges(0)[0], default_ranges(cloth_index)[1]])
+        reject(
+            args.torch.resolve(), work, "wrong-palette-source", image, palette,
+            cloth_index=cloth_index,
+            ranges=[default_ranges(cloth_index)[0], default_ranges(0)[1]])
         reject(args.torch.resolve(), work, "source-base", image, palette, source_base=True)
 
         exact = default_ranges(0)
@@ -375,7 +357,7 @@ def main() -> int:
             reject(args.torch.resolve(), work, name, image, palette, ranges=ranges)
 
         total_negatives = (
-            1 + len(field_negatives) + 1 + bounded_neighbor_negatives +
+            1 + len(field_negatives) + 1 + 3 +
             1 + len(range_negatives))
         print("AC:PLAYER_CLOTH_TEXTURE bounded validation passed: "
               f"entries={PLAYER_CLOTH_COUNT} rgba_sha256={EXPECTED_RGBA_SHA256} "

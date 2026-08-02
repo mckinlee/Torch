@@ -234,8 +234,7 @@ static std::vector<uint8_t> ReadManifestBoundedRanges(const fs::path& path, YAML
         if (!input) {
             throw std::runtime_error("Could not seek to bounded-range source offset");
         }
-        input.read(reinterpret_cast<char*>(data.data() + range.packedOffset),
-                   static_cast<std::streamsize>(range.size));
+        input.read(reinterpret_cast<char*>(data.data() + range.packedOffset), static_cast<std::streamsize>(range.size));
         if (input.gcount() != static_cast<std::streamsize>(range.size)) {
             throw std::runtime_error("Bounded-range source read was truncated");
         }
@@ -1947,6 +1946,11 @@ void Companion::Pack(const std::string& folder, const std::string& output, const
         return !path.empty() && !path.is_absolute() && !path.has_root_path() &&
                std::none_of(path.begin(), path.end(), [](const auto& component) { return component == ".."; });
     };
+    const auto canonicalOutputPath = fs::weakly_canonical(fs::absolute(fs::path(output)));
+    const auto outputRelativePath = canonicalOutputPath.lexically_relative(canonicalRootPath);
+    if (isContainedRelativePath(outputRelativePath)) {
+        throw std::runtime_error("Output archive must be outside the selected input directory: " + output);
+    }
 
     for (const auto& entry : Torch::getRecursiveEntries(folder)) {
         if (entry.is_directory()) {

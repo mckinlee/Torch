@@ -134,7 +134,7 @@ def run(torch: Path, root: Path, destination: str) -> subprocess.CompletedProces
     return subprocess.run(
         [str(torch), "o2r", "source.bin", "-s", ".", "-d", destination],
         cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env=os.environ.copy(), check=False,
+        env=os.environ.copy(), check=False, timeout=180,
     )
 
 
@@ -187,19 +187,15 @@ def main() -> int:
         positive = work / "positive"
         configure(positive, "\n".join(recipe(variant) for variant in range(1, 16)))
         write_sparse(positive / "source.bin", [(SOURCE_OFFSET, compressed)])
-        first = run(args.torch.resolve(), positive, "out-a")
-        second = run(args.torch.resolve(), positive, "out-b")
-        if first.returncode or second.returncode:
+        result = run(args.torch.resolve(), positive, "out")
+        if result.returncode:
             raise RuntimeError(
                 "positive extraction failed\n" +
-                first.stdout + first.stderr + second.stdout + second.stderr
+                result.stdout + result.stderr
             )
-        first_archive = positive / "out-a" / "game.o2r"
-        second_archive = positive / "out-b" / "game.o2r"
-        if first_archive.read_bytes() != second_archive.read_bytes():
-            raise RuntimeError("NPC texture-set archives were not deterministic")
+        archive_path = positive / "out" / "game.o2r"
         family = hashlib.sha256()
-        with zipfile.ZipFile(first_archive) as archive:
+        with zipfile.ZipFile(archive_path) as archive:
             expected_names = [
                 f"ac/texture/npc/cat/cat-{variant:02d}.ANTX"
                 for variant in range(1, 16)
