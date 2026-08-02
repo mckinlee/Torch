@@ -139,6 +139,7 @@
 #endif
 
 #ifdef AC_SUPPORT
+#include "factories/ac/AcTexturePreviewUI.h"
 #include "factories/ac/BtiTextureFactory.h"
 #include "factories/ac/GameFileFactory.h"
 #include "factories/ac/ItemBillboardTextureFactory.h"
@@ -419,6 +420,14 @@ void Companion::Init(const ExportType type, std::atomic<size_t>& assetCount, boo
     this->RegisterUIFactory("VTX", std::make_shared<VtxFactoryUI>());
     this->RegisterUIFactory("GFX", std::make_shared<DListFactoryUI>());
     this->RegisterUIFactory("LIGHTS", std::make_shared<LightsFactoryUI>());
+#ifdef AC_SUPPORT
+    const auto acTexturePreview = std::make_shared<AC::TexturePreviewUI>();
+    this->RegisterUIFactory("AC:BTI_TEXTURE", acTexturePreview);
+    this->RegisterUIFactory("AC:ITEM_BILLBOARD_TEXTURE", acTexturePreview);
+    this->RegisterUIFactory("AC:PLAYER_CLOTH_TEXTURE", acTexturePreview);
+    this->RegisterUIFactory("AC:GAME_FILE", std::make_shared<BaseFactoryUI>());
+    this->RegisterUIFactory("AC:NPC_TEXTURE_SET", std::make_shared<BaseFactoryUI>());
+#endif
 #ifdef SM64_SUPPORT
     this->RegisterUIFactory("SM64:GEO_LAYOUT", std::make_shared<SM64::GeoLayoutFactoryUI>());
     this->RegisterUIFactory("SM64:COLLISION", std::make_shared<SM64::CollisionFactoryUI>());
