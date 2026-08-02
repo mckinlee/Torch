@@ -1,4 +1,5 @@
 #include "NpcTextureSetFactory.h"
+#include "AcTextureCodec.h"
 
 #include <algorithm>
 #include <array>
@@ -28,7 +29,6 @@ constexpr uint16_t kTextureFormatC4 = 8;
 constexpr uint16_t kPaletteFormatRgb5A3 = 2;
 constexpr uint32_t kNpcTextureSetType = 0x414E5458U;
 constexpr std::array<uint8_t, 4> kPayloadMagic{ 'A', 'C', 'N', 'T' };
-constexpr std::array<uint8_t, 4> kYaz0Magic{ 'Y', 'a', 'z', '0' };
 
 constexpr std::array<uint32_t, 15> kCatSetOffsets{ {
     0x474A00U,
@@ -127,70 +127,6 @@ Specification RequireExactConfiguration(YAML::Node& node) {
     return { variant, setOffset, archivePath };
 }
 
-uint32_t ReadBigEndian32(const uint8_t* bytes) {
-    return (static_cast<uint32_t>(bytes[0]) << 24U) | (static_cast<uint32_t>(bytes[1]) << 16U) |
-           (static_cast<uint32_t>(bytes[2]) << 8U) | static_cast<uint32_t>(bytes[3]);
-}
-
-std::vector<uint8_t> DecodeYaz0(const std::vector<uint8_t>& source) {
-    if (source.size() != kCompressedStoredSize || !std::equal(kYaz0Magic.begin(), kYaz0Magic.end(), source.begin())) {
-        throw std::runtime_error("AC:NPC_TEXTURE_SET source member is not Yaz0");
-    }
-    const uint32_t outputSize = ReadBigEndian32(source.data() + 4);
-    if (outputSize < kMinimumDecompressedSize || outputSize > kMaximumDecompressedSize) {
-        throw std::runtime_error("AC:NPC_TEXTURE_SET Yaz0 output size is invalid");
-    }
-    std::vector<uint8_t> output(outputSize);
-    size_t input = 16;
-    size_t produced = 0;
-    uint8_t code = 0;
-    unsigned int bitsRemaining = 0;
-    while (produced < output.size()) {
-        if (bitsRemaining == 0) {
-            if (input >= kCompressedLogicalSize) {
-                throw std::runtime_error("AC:NPC_TEXTURE_SET Yaz0 control stream is truncated");
-            }
-            code = source[input++];
-            bitsRemaining = 8;
-        }
-        if ((code & 0x80U) != 0) {
-            if (input >= kCompressedLogicalSize) {
-                throw std::runtime_error("AC:NPC_TEXTURE_SET Yaz0 literal stream is truncated");
-            }
-            output[produced++] = source[input++];
-        } else {
-            if (input + 1 >= kCompressedLogicalSize) {
-                throw std::runtime_error("AC:NPC_TEXTURE_SET Yaz0 back-reference is truncated");
-            }
-            const uint8_t first = source[input++];
-            const uint8_t second = source[input++];
-            const size_t distance = (static_cast<size_t>(first & 0x0FU) << 8U) | second;
-            if (distance >= produced) {
-                throw std::runtime_error("AC:NPC_TEXTURE_SET Yaz0 back-reference is invalid");
-            }
-            size_t length = first >> 4U;
-            if (length == 0) {
-                if (input >= kCompressedLogicalSize) {
-                    throw std::runtime_error("AC:NPC_TEXTURE_SET Yaz0 length is truncated");
-                }
-                length = static_cast<size_t>(source[input++]) + 0x12U;
-            } else {
-                length += 2U;
-            }
-            if (length > output.size() - produced) {
-                throw std::runtime_error("AC:NPC_TEXTURE_SET Yaz0 run exceeds output");
-            }
-            const size_t copy = produced - distance - 1U;
-            for (size_t index = 0; index < length; ++index) {
-                output[produced++] = output[copy + index];
-            }
-        }
-        code <<= 1U;
-        --bitsRemaining;
-    }
-    return output;
-}
-
 void Put16(std::vector<uint8_t>& out, uint16_t value) {
     out.push_back(static_cast<uint8_t>(value >> 8U));
     out.push_back(static_cast<uint8_t>(value));
@@ -213,7 +149,9 @@ void Put64(std::vector<uint8_t>& out, uint64_t value) {
 std::optional<std::shared_ptr<IParsedData>> NpcTextureSetFactory::parse(std::vector<uint8_t>& buffer,
                                                                         YAML::Node& node) {
     const auto specification = RequireExactConfiguration(node);
-    const auto decompressed = DecodeYaz0(buffer);
+    const auto decompressed =
+        DecodeYaz0Member(buffer, kCompressedLogicalSize, kCompressedStoredSize, kMinimumDecompressedSize,
+                         kMaximumDecompressedSize, "AC:NPC_TEXTURE_SET");
     if (specification.setOffset > decompressed.size() || kSetSize > decompressed.size() - specification.setOffset) {
         throw std::runtime_error("AC:NPC_TEXTURE_SET selected set exceeds decompressed REL");
     }

@@ -141,6 +141,7 @@
 #ifdef AC_SUPPORT
 #include "factories/ac/BtiTextureFactory.h"
 #include "factories/ac/GameFileFactory.h"
+#include "factories/ac/ItemBillboardTextureFactory.h"
 #include "factories/ac/NpcTextureSetFactory.h"
 #include "factories/ac/PlayerClothTextureFactory.h"
 #endif
@@ -407,6 +408,7 @@ void Companion::Init(const ExportType type, std::atomic<size_t>& assetCount, boo
 #ifdef AC_SUPPORT
     this->RegisterFactory("AC:BTI_TEXTURE", std::make_shared<AC::BtiTextureFactory>());
     this->RegisterFactory("AC:GAME_FILE", std::make_shared<AC::GameFileFactory>());
+    this->RegisterFactory("AC:ITEM_BILLBOARD_TEXTURE", std::make_shared<AC::ItemBillboardTextureFactory>());
     this->RegisterFactory("AC:NPC_TEXTURE_SET", std::make_shared<AC::NpcTextureSetFactory>());
     this->RegisterFactory("AC:PLAYER_CLOTH_TEXTURE", std::make_shared<AC::PlayerClothTextureFactory>());
 #endif
