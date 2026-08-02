@@ -16,7 +16,14 @@
 #include "lib/binarytools/BinaryWriter.h"
 #include "lib/binarytools/BinaryReader.h"
 
+#ifdef BUILD_UI
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include "imgui.h"
+#endif
+
 namespace fs = std::filesystem;
+
+struct ParseResultData;
 
 #define REGISTER(type, c) { ExportType::type, std::make_shared<c>() },
 
@@ -24,7 +31,8 @@ namespace fs = std::filesystem;
 #define SEGMENT_NUMBER(x) (((uint32_t)(x) >> 24) & 0xFF)
 // I would love to use 0x01000000, but the stupid compiler takes it as 0x01
 #define IS_SEGMENTED(x) ((SEGMENT_NUMBER(x) > 0) && (SEGMENT_NUMBER(x) < 0x20))
-#define ASSET_PTR(x) (IS_SEGMENTED(x) ? SEGMENT_OFFSET(x) : (x))
+#define IS_VIRTUAL_SEGMENT(x) (SEGMENT_NUMBER(x) >= 0x80)
+#define ASSET_PTR(x) ((IS_SEGMENTED(x) || IS_VIRTUAL_SEGMENT(x)) ? SEGMENT_OFFSET(x) : (x))
 
 #define tab_t "\t"
 #define fourSpaceTab "    "
@@ -113,11 +121,34 @@ public:
     virtual uint32_t GetAlignment() {
         return 4;
     }
+    virtual bool IsDialogPackRoot() const {
+        return false;
+    }
+    virtual void PreprocessConfig(YAML::Node& cfg, N64::Cartridge* cart) {}
     virtual std::optional<std::shared_ptr<IParsedData>> CreateDataPointer() {
         return std::nullopt;
+    }
+    // When true, the viewer's default preview renders this factory's Code
+    // exporter output as read-only text. Only enable for exporters that just
+    // format to the stream (no file writes or other side effects).
+    virtual bool CanPreviewCode() {
+        return false;
     }
 private:
     virtual std::unordered_map<ExportType, std::shared_ptr<BaseExporter>> GetExporters() {
         return {};
     }
 };
+
+#ifdef BUILD_UI
+// Base preview renderer. The default implementation (see BaseFactory.cpp) shows
+// the asset's Code-exporter text when the factory opts in via CanPreviewCode(),
+// otherwise its YAML config. Subclasses override DrawUI for richer visuals.
+class BaseFactoryUI {
+public:
+    virtual ~BaseFactoryUI() = default;
+
+    virtual float GetItemHeight(const ParseResultData& data);
+    virtual void DrawUI(const ParseResultData& data);
+};
+#endif
