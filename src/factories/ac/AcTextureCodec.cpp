@@ -5,14 +5,25 @@
 #include <limits>
 #include <ostream>
 #include <stdexcept>
+#include <string>
 
 namespace AC {
 namespace {
 
 constexpr uint32_t kTextureResourceType = 0x4F544558U;
+constexpr std::array<uint8_t, 4> kYaz0Magic{ 'Y', 'a', 'z', '0' };
 
 uint16_t ReadBigEndian16(const uint8_t* bytes) {
     return static_cast<uint16_t>((static_cast<uint16_t>(bytes[0]) << 8U) | bytes[1]);
+}
+
+uint32_t ReadBigEndian32(const uint8_t* bytes) {
+    return (static_cast<uint32_t>(bytes[0]) << 24U) | (static_cast<uint32_t>(bytes[1]) << 16U) |
+           (static_cast<uint32_t>(bytes[2]) << 8U) | static_cast<uint32_t>(bytes[3]);
+}
+
+std::runtime_error DecodeError(std::string_view owner, std::string_view detail) {
+    return std::runtime_error(std::string(owner) + ": " + std::string(detail));
 }
 
 uint8_t Expand3(uint16_t value) {
@@ -133,6 +144,69 @@ std::vector<uint8_t> DecodeC8Rgb5A3(const uint8_t* image, size_t imageSize, cons
         }
     }
     return rgba;
+}
+
+std::vector<uint8_t> DecodeYaz0Member(const std::vector<uint8_t>& source, uint32_t logicalSize, uint32_t storedSize,
+                                      uint32_t minimumOutputSize, uint32_t maximumOutputSize, std::string_view owner) {
+    if (logicalSize < 16U || logicalSize > storedSize || source.size() != storedSize || minimumOutputSize == 0 ||
+        minimumOutputSize > maximumOutputSize || !std::equal(kYaz0Magic.begin(), kYaz0Magic.end(), source.begin())) {
+        throw DecodeError(owner, "source member is not the exact Yaz0 input");
+    }
+
+    const uint32_t outputSize = ReadBigEndian32(source.data() + 4);
+    if (outputSize < minimumOutputSize || outputSize > maximumOutputSize) {
+        throw DecodeError(owner, "Yaz0 output size is invalid");
+    }
+
+    std::vector<uint8_t> output(outputSize);
+    size_t input = 16U;
+    size_t produced = 0U;
+    uint8_t code = 0;
+    unsigned int bitsRemaining = 0;
+    while (produced < output.size()) {
+        if (bitsRemaining == 0) {
+            if (input >= logicalSize) {
+                throw DecodeError(owner, "Yaz0 control stream is truncated");
+            }
+            code = source[input++];
+            bitsRemaining = 8;
+        }
+        if ((code & 0x80U) != 0) {
+            if (input >= logicalSize) {
+                throw DecodeError(owner, "Yaz0 literal stream is truncated");
+            }
+            output[produced++] = source[input++];
+        } else {
+            if (input + 1U >= logicalSize) {
+                throw DecodeError(owner, "Yaz0 back-reference is truncated");
+            }
+            const uint8_t first = source[input++];
+            const uint8_t second = source[input++];
+            const size_t distance = (static_cast<size_t>(first & 0x0FU) << 8U) | second;
+            if (distance >= produced) {
+                throw DecodeError(owner, "Yaz0 back-reference is invalid");
+            }
+            size_t length = first >> 4U;
+            if (length == 0) {
+                if (input >= logicalSize) {
+                    throw DecodeError(owner, "Yaz0 length is truncated");
+                }
+                length = static_cast<size_t>(source[input++]) + 0x12U;
+            } else {
+                length += 2U;
+            }
+            if (length > output.size() - produced) {
+                throw DecodeError(owner, "Yaz0 run exceeds output");
+            }
+            const size_t copy = produced - distance - 1U;
+            for (size_t index = 0; index < length; ++index) {
+                output[produced++] = output[copy + index];
+            }
+        }
+        code <<= 1U;
+        --bitsRemaining;
+    }
+    return output;
 }
 
 void WriteRgba32TextureResource(std::ostream& write, const std::vector<uint8_t>& rgba, uint16_t width,
