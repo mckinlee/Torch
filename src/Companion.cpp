@@ -140,6 +140,7 @@
 
 #ifdef AC_SUPPORT
 #include "factories/ac/GameFileFactory.h"
+#include "factories/ac/PlayerClothTextureFactory.h"
 #endif
 
 #ifdef NAUDIO_SUPPORT
@@ -403,6 +404,7 @@ void Companion::Init(const ExportType type, std::atomic<size_t>& assetCount, boo
 
 #ifdef AC_SUPPORT
     this->RegisterFactory("AC:GAME_FILE", std::make_shared<AC::GameFileFactory>());
+    this->RegisterFactory("AC:PLAYER_CLOTH_TEXTURE", std::make_shared<AC::PlayerClothTextureFactory>());
 #endif
 
 #ifdef BUILD_UI
